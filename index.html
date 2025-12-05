@@ -1,105 +1,267 @@
---
--- 1. 行程主表 (trips)
--- 用於儲存每個行程的概要資訊
---
-CREATE TABLE IF NOT EXISTS public.trips (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    created_at timestamp with time zone NOT NULL DEFAULT now(),
-    owner_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-    title text NOT NULL,
-    start_date date NOT NULL,
-    end_date date NOT NULL,
-    base_currency text NOT NULL DEFAULT 'TWD',
-    region text NULL,
-    CONSTRAINT trips_pkey PRIMARY KEY (id)
-);
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TabiMate 行程規劃</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 使用 Inter 字體並確保中文字體可讀性 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Noto+Sans+TC:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f0f4f8; /* 柔和背景色 */
+        }
+        /* 模擬手機外殼和全屏視圖 */
+        .mobile-app-container {
+            width: 100%;
+            max-width: 420px; /* 標準手機寬度 */
+            height: 100vh;
+            margin: 0 auto;
+            background-color: white;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-radius: 0.75rem; /* 模擬圓角 App 邊框 */
+        }
+        /* 主要 App 主題色 (紅色/橘色系) */
+        .app-primary { background-color: #FF5A5F; }
+        .app-primary-text { color: #FF5A5F; }
+        .app-primary-light { background-color: #FEE2E2; }
+        
+        /* 確保地圖填滿空間 */
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
 
--- 啟用 RLS
-ALTER TABLE public.trips ENABLE ROW LEVEL SECURITY;
+    <!-- 應用程式容器 - 模擬手機介面 -->
+    <div id="app" class="mobile-app-container">
 
--- 只有行程成員可以讀取行程
-CREATE POLICY "Select policy for trip members"
-ON public.trips FOR SELECT
-USING (
-    EXISTS (
-        SELECT 1 
-        FROM public.trip_members 
-        WHERE trip_members.trip_id = trips.id 
-        AND trip_members.user_id = auth.uid()
-    )
-);
+        <!-- 頂部 Header/導航欄 -->
+        <header class="app-primary p-4 shadow-lg text-white flex justify-between items-center flex-shrink-0">
+            <button id="back-button" class="hidden p-1 rounded-full hover:bg-white/20 transition-opacity" onclick="showTripList()">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+            </button>
+            <h1 id="header-title" class="text-xl font-semibold w-full text-center">我的旅遊行程</h1>
+            <button id="add-trip-button" class="p-1 rounded-full hover:bg-white/20 transition-opacity" onclick="alertMessage('新增行程功能被觸發')">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+            </button>
+        </header>
 
--- 只有行程擁有者可以建立行程
-CREATE POLICY "Insert policy for trip owner"
-ON public.trips FOR INSERT
-WITH CHECK (
-    auth.uid() = owner_id
-);
+        <!-- 主要內容區 (可滾動) -->
+        <main id="content-area" class="flex-grow overflow-y-auto">
+            
+            <!-- 1. 行程列表畫面 (預設顯示) -->
+            <div id="trip-list-view" class="p-4 space-y-4">
+                <!-- 行程卡片將由 JS 渲染 -->
+                <div id="trip-cards-container" class="space-y-4">
+                    <!-- 範例行程 -->
+                </div>
+            </div>
 
+            <!-- 2. 地圖/導航畫面 -->
+            <div id="map-view" class="h-full w-full hidden flex flex-col">
+                <div id="map-info" class="p-4 bg-white shadow-md flex-shrink-0">
+                    <p class="font-bold text-lg app-primary-text">導航路線：<span id="map-destination-name">目的地</span></p>
+                    <p class="text-sm text-gray-500">規劃中...</p>
+                </div>
+                <div id="map" class="flex-grow">
+                    <!-- Google Maps 將在此處初始化 -->
+                </div>
+            </div>
 
---
--- 2. 行程成員表 (trip_members)
--- 支援未來共同規劃功能，並作為 RLS 的依據
---
-CREATE TABLE IF NOT EXISTS public.trip_members (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    created_at timestamp with time zone NOT NULL DEFAULT now(),
-    trip_id uuid REFERENCES public.trips(id) ON DELETE CASCADE NOT NULL,
-    user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-    role text NOT NULL DEFAULT 'member', -- 'owner', 'member'
-    CONSTRAINT trip_members_pkey PRIMARY KEY (id)
-);
+        </main>
+        
+        <!-- 底部消息/提示框 (模擬 Alert) -->
+        <div id="message-box" class="fixed bottom-0 left-0 right-0 p-4 hidden z-20 transition-all duration-300 transform translate-y-full max-w-[420px] mx-auto" style="bottom: 0;">
+            <!-- 訊息內容 -->
+        </div>
 
--- 啟用 RLS
-ALTER TABLE public.trip_members ENABLE ROW LEVEL SECURITY;
+    </div>
 
--- 所有成員可以讀取成員列表
-CREATE POLICY "Allow members to view members list"
-ON public.trip_members FOR SELECT
-USING (auth.uid() = user_id OR EXISTS (
-    SELECT 1 FROM public.trip_members tm2 
-    WHERE tm2.trip_id = trip_members.trip_id AND tm2.user_id = auth.uid()
-));
+    <!-- Google Maps API 載入點 -->
+    <!-- 請務必替換 YOUR_GOOGLE_MAPS_API_KEY 為您自己的金鑰 -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=places,geometry&callback=initApp">
+    </script>
 
--- 任何人都可以新增自己作為成員 (通常與 trips INSERT 一起執行)
-CREATE POLICY "Allow authenticated user to insert own membership"
-ON public.trip_members FOR INSERT
-WITH CHECK (auth.uid() = user_id);
+    <script>
+        // --- 全域變數和狀態 ---
+        let map;
+        let directionsService;
+        let directionsRenderer;
+        let currentTrip = null; // 當前選擇的行程數據
+        const mapDiv = document.getElementById('map');
+        const contentArea = document.getElementById('content-area');
+        
+        // 模擬行程數據（通常從 Firestore 或 API 載入）
+        const trips = [
+            { id: 1, title: '日本關西美食之旅', date: '2026/03/01 - 03/07', days: 7, 
+              items: [
+                { name: '大阪城', lat: 34.6873, lng: 135.5262, time: '10:00', icon: '🏯' },
+                { name: '道頓堀 (晚餐)', lat: 34.6687, lng: 135.5020, time: '18:30', icon: '🦀' }
+              ] 
+            },
+            { id: 2, title: '東京購物與文化體驗', date: '2026/06/15 - 06/20', days: 6, 
+              items: [
+                { name: '淺草寺', lat: 35.7147, lng: 139.7967, time: '09:00', icon: '⛩️' },
+                { name: '澀谷交叉口', lat: 35.6591, lng: 139.7011, time: '14:00', icon: '🚥' }
+              ] 
+            }
+        ];
 
+        // --- 核心工具函數 ---
 
---
--- 3. 行程項目/景點表 (itinerary_items)
--- 儲存每日的景點、活動細節 (Option E)
---
-CREATE TABLE IF NOT EXISTS public.itinerary_items (
-    id uuid NOT NULL DEFAULT gen_random_uuid(),
-    created_at timestamp with time zone NOT NULL DEFAULT now(),
-    tripId uuid REFERENCES public.trips(id) ON DELETE CASCADE NOT NULL,
-    date date NOT NULL,
-    name text NOT NULL,
-    startTime text NOT NULL, -- 由於是 TimeOfDay 格式，使用 text
-    sortIndex integer NOT NULL DEFAULT 0,
-    description text NULL,
-    endTime text NULL,
-    address text NULL,
-    CONSTRAINT itinerary_items_pkey PRIMARY KEY (id)
-);
+        // 模擬 App 的 Alert 提示，避免使用 window.alert
+        function alertMessage(message, duration = 3000) {
+            const msgBox = document.getElementById('message-box');
+            msgBox.classList.remove('hidden', 'translate-y-full');
+            msgBox.classList.add('flex', 'justify-center', 'items-center');
+            msgBox.innerHTML = `
+                <div class="bg-gray-800 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center space-x-2">
+                    <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    <span>${message}</span>
+                </div>
+            `;
+            setTimeout(() => {
+                msgBox.classList.add('translate-y-full');
+                setTimeout(() => msgBox.classList.add('hidden'), 300); // 延遲隱藏
+            }, duration);
+        }
 
--- 啟用 RLS
-ALTER TABLE public.itinerary_items ENABLE ROW LEVEL SECURITY;
+        // --- Google Maps 相關函數 ---
 
--- 只有行程成員可以讀取景點
-CREATE POLICY "Select policy for itinerary items"
-ON public.itinerary_items FOR SELECT
-USING (EXISTS (
-    SELECT 1 FROM public.trip_members 
-    WHERE trip_members.trip_id = itinerary_items.tripId AND trip_members.user_id = auth.uid()
-));
+        // Google Maps API 載入後的初始化回調函數
+        window.initApp = function() {
+            // 初始化地圖服務，但先不顯示地圖
+            directionsService = new google.maps.DirectionsService();
+            directionsRenderer = new google.maps.DirectionsRenderer();
+            
+            // 渲染初始畫面 (行程列表)
+            renderTripCards();
+        }
 
--- 只有行程成員可以新增景點
-CREATE POLICY "Insert policy for itinerary items"
-ON public.itinerary_items FOR INSERT
-WITH CHECK (EXISTS (
-    SELECT 1 FROM public.trip_members 
-    WHERE trip_members.trip_id = itinerary_items.tripId AND trip_members.user_id = auth.uid()
-));
+        // 初始化/顯示地圖
+        function initMap(centerLat, centerLng) {
+            // 如果地圖已經存在，則直接使用
+            if (map) {
+                map.setCenter({ lat: centerLat, lng: centerLng });
+                directionsRenderer.setMap(null); // 清除舊路線
+                directionsRenderer.setMap(map);  // 重新綁定
+                return;
+            }
+
+            // 首次初始化地圖
+            map = new google.maps.Map(mapDiv, {
+                center: { lat: centerLat, lng: centerLng },
+                zoom: 12,
+                mapTypeControl: false,
+                streetViewControl: false,
+                fullscreenControl: false,
+                zoomControl: true,
+            });
+            directionsRenderer.setMap(map);
+            alertMessage('地圖服務載入成功！', 2000);
+        }
+
+        // 規劃導航路線
+        function plotDirections(origin, destination, destinationName) {
+            initMap(destination.lat, destination.lng); // 確保地圖已初始化並以目的地為中心
+            
+            // 由於我們沒有起點，我們使用一個固定/模擬的起點來展示路線功能
+            const mockOrigin = { lat: destination.lat + 0.05, lng: destination.lng - 0.05 }; 
+
+            document.getElementById('map-destination-name').textContent = destinationName;
+            document.getElementById('map-info').querySelector('p:last-child').textContent = '規劃路線中...';
+
+            directionsService.route(
+                {
+                    origin: mockOrigin,
+                    destination: destination,
+                    travelMode: google.maps.TravelMode.DRIVING, // 選擇駕駛模式
+                },
+                (response, status) => {
+                    if (status === 'OK') {
+                        directionsRenderer.setDirections(response);
+                        const route = response.routes[0].legs[0];
+                        document.getElementById('map-info').querySelector('p:last-child').innerHTML = 
+                            `距離: ${route.distance.text} | 預計時間: ${route.duration.text}`;
+                    } else {
+                        directionsRenderer.setDirections({ routes: [] }); // 清除路線
+                        alertMessage('無法載入導航路線: ' + status, 5000);
+                        document.getElementById('map-info').querySelector('p:last-child').textContent = '無法規劃路線';
+                    }
+                }
+            );
+        }
+
+        // --- UI/畫面控制函數 ---
+
+        // 顯示行程列表畫面
+        function showTripList() {
+            document.getElementById('map-view').classList.add('hidden');
+            document.getElementById('trip-list-view').classList.remove('hidden');
+            
+            document.getElementById('back-button').classList.add('hidden');
+            document.getElementById('add-trip-button').classList.remove('hidden');
+            document.getElementById('header-title').textContent = '我的旅遊行程';
+        }
+
+        // 顯示地圖畫面
+        function showMap(destination, name) {
+            document.getElementById('trip-list-view').classList.add('hidden');
+            document.getElementById('map-view').classList.remove('hidden');
+
+            document.getElementById('back-button').classList.remove('hidden');
+            document.getElementById('add-trip-button').classList.add('hidden');
+            document.getElementById('header-title').textContent = '導航中';
+
+            plotDirections(null, destination, name); // 規劃路線
+        }
+
+        // 渲染行程列表卡片
+        function renderTripCards() {
+            const container = document.getElementById('trip-cards-container');
+            container.innerHTML = trips.map(trip => `
+                <div class="bg-white p-4 rounded-xl shadow-lg border-l-4 border-red-500 hover:shadow-xl transition duration-200">
+                    <h3 class="font-bold text-lg app-primary-text">${trip.title}</h3>
+                    <p class="text-sm text-gray-500 mt-1">${trip.date} (${trip.days}天)</p>
+                    <div class="mt-3 space-y-2">
+                        <!-- 行程項目列表 -->
+                        ${trip.items.map(item => `
+                            <div class="flex justify-between items-center text-sm p-2 app-primary-light rounded-lg">
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-lg">${item.icon}</span>
+                                    <span>${item.name} (${item.time})</span>
+                                </div>
+                                <button onclick="showMap({lat: ${item.lat}, lng: ${item.lng}}, '${item.name}')" 
+                                        class="text-white text-xs bg-red-500 py-1 px-3 rounded-full hover:bg-red-600 transition">
+                                    導航
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        // 初始載入時，確保 App 顯示行程列表
+        document.addEventListener('DOMContentLoaded', () => {
+            // 如果 Google Maps API 腳本載入較快，initApp 會先執行。
+            // 這裡作為備用，確保在 DOMContentLoaded 事件後執行。
+            if (typeof google === 'undefined' || !google.maps.Map) {
+                // 如果 Google Maps 尚未載入，等待 initApp 回調
+            } else {
+                 initApp();
+            }
+        });
+
+    </script>
+Fix: Replace Dart code with actual index.html
+
