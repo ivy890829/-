@@ -1,0 +1,531 @@
+// TabiMate 最終整合應用程式架構 (v2.4)
+// 此檔案為展示所有模組整合的單一 Flutter/Dart 程式碼。
+// 實際專案中，各功能應分拆為獨立檔案與套件。
+
+// 模擬 Flutter 核心和 Riverpod/GoRouter/Supabase 依賴
+import 'package:flutter/material.dart';
+// 假設這些套件已正確配置
+// import 'package:flutter_riverpod/flutter_riverpod.dart';
+// import 'package:go_router/go_router.dart';
+// import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:async'; // 用於模擬 Future/Stream
+
+// -------------------------------------------------------------------
+// 核心模型 (MODELS)
+// -------------------------------------------------------------------
+
+class Trip {
+  final String id;
+  final String title;
+  final DateTime startDate;
+  final DateTime endDate;
+
+  Trip({required this.id, required this.title, required this.startDate, required this.endDate});
+
+  int get days => endDate.difference(startDate).inDays + 1;
+}
+
+class ItineraryItem {
+  final String id;
+  final String date; // YYYY-MM-DD
+  final String name;
+  final String startTime;
+
+  ItineraryItem({required this.id, required this.date, required this.name, required this.startTime});
+}
+
+
+// -------------------------------------------------------------------
+// 模擬服務層與狀態管理 (MOCK SERVICES & STATE)
+// -------------------------------------------------------------------
+
+// 模擬 Supabase 驗證狀態
+final authStateProvider = ValueNotifier<bool>(true); // 預設已登入
+
+// 模擬行程數據庫
+final mockTrips = [
+  Trip(id: 'trip1', title: '關西京阪神美食之旅 (5天)', startDate: DateTime(2025, 12, 10), endDate: DateTime(2025, 12, 14)),
+  Trip(id: 'trip2', title: '北海道雪國溫泉之旅 (7天)', startDate: DateTime(2026, 1, 5), endDate: DateTime(2026, 1, 11)),
+];
+
+// 模擬景點數據
+final mockItinerary = [
+  ItineraryItem(id: 'i1', date: '2025-12-10', name: '伏見稻荷大社', startTime: '09:00'),
+  ItineraryItem(id: 'i2', date: '2025-12-10', name: '錦市場午餐', startTime: '12:30'),
+  ItineraryItem(id: 'i3', date: '2025-12-11', name: '大阪城公園', startTime: '10:00'),
+  ItineraryItem(id: 'i4', date: '2025-12-11', name: '道頓堀晚餐', startTime: '18:30'),
+];
+
+// 模擬 Repository 讀取行程 (使用 Future/Stream 模擬非同步數據)
+Future<List<Trip>> fetchTrips() => Future.value(mockTrips);
+
+// 模擬 Repository 讀取景點
+Stream<List<ItineraryItem>> watchItineraryItems(String tripId) {
+  // 模擬 Stream 在 1 秒後發送數據
+  return Stream.fromFuture(Future.delayed(
+    const Duration(seconds: 1),
+    () => mockItinerary,
+  ));
+}
+
+// -------------------------------------------------------------------
+// 路由設定 (SIMPLIFIED GO_ROUTER)
+// -------------------------------------------------------------------
+
+// 簡化路由表，用於本地導航
+class AppRouter {
+  static const String login = '/login';
+  static const String dashboard = '/dashboard';
+  static const String itineraryDetail = '/itinerary'; // 加上 /:tripId
+  static const String wallet = '/wallet';
+  static const String connect = '/connect';
+  static const String vault = '/vault';
+
+  // 模擬 GoRouter 的導航邏輯 (使用 Navigator 進行本地導航)
+  static void navigateTo(BuildContext context, String route, {String? tripId}) {
+    Widget screen;
+    switch (route) {
+      case login:
+        screen = const AuthScreen();
+        break;
+      case dashboard:
+        screen = const DashboardScreen();
+        break;
+      case itineraryDetail:
+        screen = ItineraryDetailScreen(tripId: tripId!);
+        break;
+      case wallet:
+        screen = const ExpenseDashboardScreen();
+        break;
+      case connect:
+        screen = const ConnectScreen();
+        break;
+      case vault:
+        screen = const VaultScreen();
+        break;
+      default:
+        return;
+    }
+    Navigator.of(context).push(MaterialPageRoute(builder: (context) => screen));
+  }
+}
+
+// -------------------------------------------------------------------
+// 導航抽屜 (MAIN NAVIGATION DRAWER)
+// -------------------------------------------------------------------
+
+class MainDrawer extends StatelessWidget {
+  const MainDrawer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: <Widget>[
+          const UserAccountsDrawerHeader(
+            accountName: Text('TabiMate 用戶'),
+            accountEmail: Text('user@tabimate.com'),
+            decoration: BoxDecoration(
+              color: Colors.redAccent,
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.dashboard),
+            title: const Text('行程儀表板 (Dashboard)'),
+            onTap: () => AppRouter.navigateTo(context, AppRouter.dashboard),
+          ),
+          ListTile(
+            leading: const Icon(Icons.wallet),
+            title: const Text('同步記帳 (WalletSync)'),
+            onTap: () => AppRouter.navigateTo(context, AppRouter.wallet),
+          ),
+          ListTile(
+            leading: const Icon(Icons.translate),
+            title: const Text('溝通翻譯 (Connect)'),
+            onTap: () => AppRouter.navigateTo(context, AppRouter.connect),
+          ),
+          ListTile(
+            leading: const Icon(Icons.security),
+            title: const Text('入境保險庫 (Vault)'),
+            onTap: () => AppRouter.navigateTo(context, AppRouter.vault),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.logout),
+            title: const Text('登出'),
+            onTap: () {
+              // 模擬登出邏輯
+              authStateProvider.value = false;
+              Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const AuthScreen()), (Route<dynamic> route) => false);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------------
+// 畫面實作 (SCREENS)
+// -------------------------------------------------------------------
+
+// 1. 驗證畫面 (AuthScreen)
+class AuthScreen extends StatelessWidget {
+  const AuthScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('TabiMate 登入')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('歡迎使用 TabiMate', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 40),
+              TextField(decoration: const InputDecoration(labelText: 'Email')),
+              const SizedBox(height: 10),
+              TextField(decoration: const InputDecoration(labelText: '密碼'), obscureText: true),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  // 模擬登入成功
+                  authStateProvider.value = true;
+                  Navigator.of(context).pushReplacement(
+                      MaterialPageRoute(builder: (context) => const DashboardScreen()));
+                },
+                child: const Text('登入 / 註冊'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 2. 行程儀表板 (DashboardScreen)
+class DashboardScreen extends StatelessWidget {
+  const DashboardScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('行程儀表板'),
+        backgroundColor: Colors.redAccent,
+        foregroundColor: Colors.white,
+      ),
+      drawer: const MainDrawer(),
+      body: FutureBuilder<List<Trip>>(
+        future: fetchTrips(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('載入行程錯誤: ${snapshot.error}'));
+          }
+
+          final trips = snapshot.data ?? [];
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: trips.length,
+            itemBuilder: (context, index) {
+              final trip = trips[index];
+              return Card(
+                child: ListTile(
+                  leading: const Icon(Icons.flight_takeoff, color: Colors.redAccent),
+                  title: Text(trip.title),
+                  subtitle: Text('${trip.days} 天 ${trip.startDate.year}/${trip.startDate.month}/${trip.startDate.day}'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () => AppRouter.navigateTo(context, AppRouter.itineraryDetail, tripId: trip.id),
+                ),
+              );
+            },
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // 模擬新增行程 Modal
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('啟動新增行程 Modal')));
+        },
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+}
+
+// 3. 行程詳情 (ItineraryDetailScreen)
+class ItineraryDetailScreen extends StatelessWidget {
+  final String tripId;
+  const ItineraryDetailScreen({super.key, required this.tripId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('行程詳情 ($tripId)'),
+        backgroundColor: Colors.redAccent,
+        foregroundColor: Colors.white,
+      ),
+      body: StreamBuilder<List<ItineraryItem>>(
+        stream: watchItineraryItems(tripId),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text('載入景點錯誤: ${snapshot.error}'));
+          }
+
+          final items = snapshot.data ?? [];
+          return ListView.builder(
+            itemCount: items.length + 1,
+            itemBuilder: (context, index) {
+              if (index < items.length) {
+                final item = items[index];
+                return ListTile(
+                  leading: Text(item.startTime, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(item.name),
+                  subtitle: Text('日期: ${item.date}'),
+                  trailing: const Icon(Icons.drag_handle),
+                );
+              }
+              // 新增景點按鈕 (模擬 Option E 的新增功能)
+              return Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('啟動新增景點 Modal')));
+                  },
+                  icon: const Icon(Icons.add_location_alt),
+                  label: const Text('新增景點'),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// 4. 財務記帳 (ExpenseDashboardScreen) - Option D
+class ExpenseDashboardScreen extends StatelessWidget {
+  const ExpenseDashboardScreen({super.key});
+
+  // 模擬匯率換算
+  double mockConvert(double jpy) => jpy * 0.22;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('同步記帳與預算 (WalletSync)'),
+        backgroundColor: Colors.amber,
+        foregroundColor: Colors.black87,
+      ),
+      drawer: const MainDrawer(),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('匯率工具箱 (JPY to TWD)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            TextField(
+              decoration: InputDecoration(
+                labelText: '輸入日幣金額 (JPY 5000)',
+                suffixText: '約 TWD ${mockConvert(5000).toStringAsFixed(2)}',
+                border: const OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.number,
+            ),
+            const Divider(height: 40),
+            const Text('花費列表', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ListTile(
+              leading: const Icon(Icons.fastfood, color: Colors.green),
+              title: const Text('午餐 - 一蘭拉麵'),
+              trailing: Text('JPY 1,500 / TWD ${mockConvert(1500).toStringAsFixed(0)}'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.shopping_bag, color: Colors.blue),
+              title: const Text('藥妝店購物'),
+              trailing: Text('JPY 8,700 / TWD ${mockConvert(8700).toStringAsFixed(0)}'),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('啟動新增花費表單')));
+        },
+        label: const Text('新增花費'),
+        icon: const Icon(Icons.add),
+        backgroundColor: Colors.amber,
+      ),
+    );
+  }
+}
+
+// 5. 溝通翻譯 (ConnectScreen) - Option F
+class ConnectScreen extends StatefulWidget {
+  const ConnectScreen({super.key});
+
+  @override
+  State<ConnectScreen> createState() => _ConnectScreenState();
+}
+
+class _ConnectScreenState extends State<ConnectScreen> {
+  String translatedText = 'すみません、トイレはどこですか？';
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('溝通與翻譯 (Connect)'),
+        backgroundColor: Colors.blueAccent,
+        foregroundColor: Colors.white,
+      ),
+      drawer: const MainDrawer(),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('中文輸入', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            const TextField(
+              maxLines: 3,
+              decoration: InputDecoration(hintText: '我想去最近的車站。', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton.icon(
+              onPressed: () {
+                // 模擬翻譯服務呼叫
+                setState(() => translatedText = '最寄りの駅に行きたいのですが。');
+              },
+              icon: const Icon(Icons.translate),
+              label: const Text('翻譯成日文'),
+            ),
+            const SizedBox(height: 20),
+            const Text('日文結果', style: TextStyle(fontWeight: FontWeight.bold)),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                border: Border.all(color: Colors.blueAccent),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(translatedText, style: const TextStyle(fontSize: 18)),
+            ),
+            const Divider(height: 40),
+            const Text('常用語手冊', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            ListTile(
+              title: const Text('結帳'),
+              subtitle: const Text('お会計お願いします'),
+              trailing: const Icon(Icons.copy),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// 6. 入境保險庫 (VaultScreen) - Option F
+class VaultScreen extends StatelessWidget {
+  const VaultScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('入境資料保險庫 (Vault)'),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+      ),
+      drawer: const MainDrawer(),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('護照資訊 (已加密儲存)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.teal)),
+            const SizedBox(height: 10),
+            const ListTile(
+              leading: Icon(Icons.security, color: Colors.teal),
+              title: Text('護照號碼'),
+              subtitle: Text('E12345678 (點擊編輯)'),
+              trailing: Icon(Icons.edit),
+            ),
+            const ListTile(
+              leading: Icon(Icons.calendar_month, color: Colors.teal),
+              title: Text('出生日期'),
+              subtitle: Text('1990-01-01'),
+              trailing: Icon(Icons.lock),
+            ),
+            const Divider(height: 40),
+            const Text('Visit Japan Web 輔助', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Card(
+              elevation: 2,
+              child: ListTile(
+                leading: const Icon(Icons.qr_code_2, color: Colors.deepOrange),
+                title: const Text('海關申報 QR Code 截圖'),
+                subtitle: const Text('快速存取您的入境代碼'),
+                onTap: () {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('顯示 QR Code 截圖')));
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------------
+// 應用程式主入口 (MAIN APP ENTRY)
+// -------------------------------------------------------------------
+
+class TabiMateApp extends StatelessWidget {
+  const TabiMateApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    // 這裡我們使用 ValueListenableBuilder 模擬 Riverpod 或 GoRouter 的狀態監聽，
+    // 以決定啟動畫面是 Dashboard 還是 AuthScreen。
+    return ValueListenableBuilder<bool>(
+      valueListenable: authStateProvider,
+      builder: (context, isLoggedIn, child) {
+        return MaterialApp(
+          title: 'TabiMate - 日本旅遊規劃',
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: const Color(0xFFFF5A5F), // TabiMate 主題色 (Airbnb 紅)
+              primary: const Color(0xFFFF5A5F),
+            ),
+            useMaterial3: true,
+          ),
+          // 根據登入狀態決定主頁
+          home: isLoggedIn ? const DashboardScreen() : const AuthScreen(),
+        );
+      },
+    );
+  }
+}
+
+// 啟動應用程式
+void main() {
+  // 實際應用中，這裡會執行 Supabase.initialize, Riverpod Provider Scope 等初始化
+  runApp(const TabiMateApp());
+}
+
+Commit message
